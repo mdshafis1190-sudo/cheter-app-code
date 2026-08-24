@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">CHETER</string>
+    <string name="restaurant_name_hi">रॉयल ढाबा &amp; रेस्टोरेंट (CHETER)</string>
+    <string name="restaurant_name_en">CHETER - Royal Dhaba &amp; Restaurant</string>
+    <string name="restaurant_tagline_hi">टेबल चुनें और ताज़ा खाना ऑर्डर करें</string>
+    <string name="restaurant_tagline_en">Select table &amp; order fresh hot food</string>
+</resources>

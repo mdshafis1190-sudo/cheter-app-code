@@ -1,0 +1,6 @@
+{
+  "name": "CHETER",
+  "description": "CHETER Digital QR restaurant menu and ordering system with table management, real-time UPI and cash payments, waiter alerts, and fraud prevention.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
