@@ -198,6 +198,22 @@ class MenuViewModel : ViewModel() {
                 if (tables.isNotEmpty()) {
                     _uiState.value = _uiState.value.copy(restaurantTables = tables)
                 }
+                // Fetch restaurant/owner settings from Supabase
+                val restaurantRes = supabaseService.getRestaurantSettings(cleanHotelId)
+                if (restaurantRes.isSuccess && restaurantRes.getOrNull() != null) {
+                    val restaurant = restaurantRes.getOrNull()!!
+                    val curShop = _uiState.value.shopInfo
+                    _uiState.value = _uiState.value.copy(
+                        shopInfo = curShop.copy(
+                            shopName = if (restaurant.name.isNotBlank()) restaurant.name else curShop.shopName,
+                            upiId = if (restaurant.upiId.isNotBlank()) restaurant.upiId else curShop.upiId,
+                            customUpiQrUrl = if (restaurant.customUpiQrUrl.isNotBlank()) restaurant.customUpiQrUrl else curShop.customUpiQrUrl,
+                            phone = if (restaurant.phone.isNotBlank()) restaurant.phone else curShop.phone,
+                            address = if (restaurant.address.isNotBlank()) restaurant.address else curShop.address,
+                            totalTables = if (restaurant.totalTables > 0) restaurant.totalTables else curShop.totalTables
+                        )
+                    )
+                }
             } catch (_: Exception) {}
         }
     }
@@ -450,6 +466,15 @@ class MenuViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(shopInfo = updatedShopInfo)
         viewModelScope.launch {
             firebaseService.saveShopInfo(updatedShopInfo)
+            supabaseService.saveRestaurantSettings(
+                restaurantId = updatedShopInfo.hotelId.ifBlank { "hotel1" },
+                name = updatedShopInfo.shopName,
+                upiId = updatedShopInfo.upiId,
+                customUpiQrUrl = updatedShopInfo.customUpiQrUrl,
+                phone = updatedShopInfo.phone,
+                address = updatedShopInfo.address,
+                totalTables = updatedShopInfo.totalTables
+            )
         }
     }
 

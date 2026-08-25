@@ -61,11 +61,13 @@ class SupabaseMenuService(private val context: Context?) {
             val list = res.getOrNull()!!.map { it.toMenuItem() }
             Result.success(list)
         } else {
-            // Seed sample menu if database table was empty or not yet seeded
-            Log.d(tag, "Seeding initial menu items to Supabase for hotel: $cleanHotelId...")
+            // Seed sample menu if database table was empty or not yet seeded (only if remote is connected)
             val sampleItems = SampleMenuData.initialMenuItems
-            sampleItems.forEach { item ->
-                client.upsertMenuItem(SupabaseMenuItemDto.fromMenuItem(item, cleanHotelId))
+            if (client.isHostReachable && res.isSuccess) {
+                Log.d(tag, "Seeding initial menu items to Supabase for hotel: $cleanHotelId...")
+                sampleItems.forEach { item ->
+                    client.upsertMenuItem(SupabaseMenuItemDto.fromMenuItem(item, cleanHotelId))
+                }
             }
             Result.success(sampleItems)
         }
@@ -91,8 +93,10 @@ class SupabaseMenuService(private val context: Context?) {
             fetched.forEach { localTablesCache[it.tableNumber] = it }
             fetched
         } else {
-            // Return cached 100 tables and batch seed to Supabase
-            client.batchSeedTables(100, cleanHotelId)
+            // Return cached 100 tables and batch seed to Supabase if connected
+            if (client.isHostReachable && res.isSuccess) {
+                client.batchSeedTables(100, cleanHotelId)
+            }
             localTablesCache.values.toList().sortedBy { it.tableNumber }
         }
     }
@@ -289,4 +293,35 @@ class SupabaseMenuService(private val context: Context?) {
 
         Result.success(authenticatedUser)
     }
+
+    // ================= RESTAURANT / OWNER UPI SETTINGS =================
+
+    suspend fun getRestaurantSettings(restaurantId: String = "hotel1"): Result<SupabaseRestaurantDto?> = withContext(Dispatchers.IO) {
+        val cleanId = restaurantId.ifBlank { "hotel1" }
+        client.fetchRestaurant(cleanId)
+    }
+
+    suspend fun saveRestaurantSettings(
+        restaurantId: String,
+        name: String,
+        upiId: String,
+        customUpiQrUrl: String = "",
+        phone: String = "",
+        address: String = "",
+        totalTables: Int = 100
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        val cleanId = restaurantId.ifBlank { "hotel1" }
+        val dto = SupabaseRestaurantDto(
+            id = cleanId,
+            name = name,
+            upiId = upiId,
+            customUpiQrUrl = customUpiQrUrl,
+            phone = phone,
+            address = address,
+            totalTables = totalTables,
+            updatedAt = System.currentTimeMillis()
+        )
+        client.upsertRestaurant(dto)
+    }
 }
+

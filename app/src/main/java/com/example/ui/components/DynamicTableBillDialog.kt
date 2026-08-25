@@ -60,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -75,6 +76,7 @@ import com.example.model.PaymentMethod
 import com.example.model.PaymentStatus
 import com.example.model.ShopInfo
 import com.example.model.TableBillSummary
+import com.example.util.QrCodeGenerator
 import com.example.ui.theme.CheterCyan
 import com.example.ui.theme.CheterPurple
 import com.example.ui.theme.DhabaGold
@@ -96,8 +98,14 @@ fun DynamicTableBillDialog(
     var selectedPaymentMethod by remember { mutableStateOf(PaymentMethod.UPI) }
 
     val upiVpa = shopInfo.upiId.ifBlank { "cheter.dine@okhdfcbank" }
-    val merchantName = shopInfo.shopName.ifBlank { "CHETER Royal Dhaba" }
-    val upiPayload = "upi://pay?pa=$upiVpa&pn=${Uri.encode(merchantName)}&am=${billSummary.grandTotal}&cu=INR&tn=Table_${billSummary.tableNumber}_Bill"
+    val upiPayload = QrCodeGenerator.createUpiUri(
+        ownerUpiId = upiVpa,
+        totalAmount = billSummary.grandTotal,
+        payeeName = "CheterApp"
+    )
+    val localQrBitmap = remember(upiPayload) {
+        QrCodeGenerator.generateQrBitmap(upiPayload, size = 512)
+    }
     val dynamicQrApiUrl = if (shopInfo.customUpiQrUrl.isNotBlank()) {
         shopInfo.customUpiQrUrl
     } else {
@@ -566,14 +574,34 @@ fun DynamicTableBillDialog(
                                         .border(2.dp, DhabaRed, RoundedCornerShape(12.dp)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    AsyncImage(
-                                        model = dynamicQrApiUrl,
-                                        contentDescription = "Dynamic UPI QR Code",
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(8.dp),
-                                        contentScale = ContentScale.Fit
-                                    )
+                                    if (shopInfo.customUpiQrUrl.isNotBlank()) {
+                                        AsyncImage(
+                                            model = shopInfo.customUpiQrUrl,
+                                            contentDescription = "Dynamic UPI QR Code",
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(8.dp),
+                                            contentScale = ContentScale.Fit
+                                        )
+                                    } else if (localQrBitmap != null) {
+                                        Image(
+                                            bitmap = localQrBitmap.asImageBitmap(),
+                                            contentDescription = "ZXing Generated UPI Payment QR Code",
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(8.dp),
+                                            contentScale = ContentScale.Fit
+                                        )
+                                    } else {
+                                        AsyncImage(
+                                            model = dynamicQrApiUrl,
+                                            contentDescription = "Dynamic UPI QR Code",
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(8.dp),
+                                            contentScale = ContentScale.Fit
+                                        )
+                                    }
                                 }
 
                                 Spacer(modifier = Modifier.height(8.dp))

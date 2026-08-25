@@ -313,3 +313,16 @@ data class SupabaseUserDto(
         )
     }
 }
+
+@JsonClass(generateAdapter = true)
+data class SupabaseRestaurantDto(
+    @Json(name = "id") val id: String,
+    @Json(name = "name") val name: String = "",
+    @Json(name = "upi_id") val upiId: String = "",
+    @Json(name = "custom_upi_qr_url") val customUpiQrUrl: String = "",
+    @Json(name = "phone") val phone: String = "",
+    @Json(name = "address") val address: String = "",
+    @Json(name = "total_tables") val totalTables: Int = 100,
+    @Json(name = "updated_at") val updatedAt: Long = System.currentTimeMillis()
+)
+

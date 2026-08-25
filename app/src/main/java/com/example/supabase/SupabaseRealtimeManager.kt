@@ -48,16 +48,20 @@ class SupabaseRealtimeManager(
 
         val cleanHotelId = hotelId.ifBlank { "hotel1" }
         syncJob = scope.launch(Dispatchers.IO) {
-            Log.d(tag, "Started Supabase Realtime Subscription for hotel: $cleanHotelId")
-            _realtimeEvents.emit(SupabaseRealtimeEvent.ConnectionStateChanged(true, "⚡ Supabase Realtime Active ($cleanHotelId)"))
+            Log.d(tag, "Started Supabase Sync for hotel: $cleanHotelId")
+            var lastConnectedState = false
 
             while (isActive) {
+                var currentCycleSuccess = false
+                var nextDelayMs = pollIntervalMs
+
                 try {
                     val availableMenuItems = menuItemsProvider()
 
                     // 1. Sync Live Orders strictly for this hotel from Supabase
                     val ordersResult = client.fetchOrders(cleanHotelId)
                     if (ordersResult.isSuccess) {
+                        currentCycleSuccess = true
                         val dtos = ordersResult.getOrDefault(emptyList())
                         val orders = dtos.map { it.toTableOrder(availableMenuItems) }
 
@@ -82,6 +86,7 @@ class SupabaseRealtimeManager(
                     // 2. Sync Live Restaurant Tables (T-1 to T-100) strictly for this hotel
                     val tablesResult = client.fetchTables(cleanHotelId)
                     if (tablesResult.isSuccess) {
+                        currentCycleSuccess = true
                         val tableDtos = tablesResult.getOrDefault(emptyList())
                         if (tableDtos.isNotEmpty()) {
                             val tables = tableDtos.map { it.toRestaurantTable() }
@@ -89,11 +94,31 @@ class SupabaseRealtimeManager(
                         }
                     }
 
+                    if (currentCycleSuccess) {
+                        if (!lastConnectedState) {
+                            lastConnectedState = true
+                            _realtimeEvents.emit(SupabaseRealtimeEvent.ConnectionStateChanged(true, "⚡ Supabase Realtime Active ($cleanHotelId)"))
+                        }
+                        nextDelayMs = pollIntervalMs
+                    } else {
+                        if (lastConnectedState || isFirstSync) {
+                            lastConnectedState = false
+                            isFirstSync = false
+                            _realtimeEvents.emit(SupabaseRealtimeEvent.ConnectionStateChanged(false, "Offline / Local Engine Active"))
+                        }
+                        // Adaptive backoff when offline or host unreachable
+                        nextDelayMs = 15000L
+                    }
+
                 } catch (e: Exception) {
-                    Log.w(tag, "Supabase Realtime Sync tick warning: ${e.localizedMessage}")
+                    if (lastConnectedState) {
+                        lastConnectedState = false
+                        _realtimeEvents.emit(SupabaseRealtimeEvent.ConnectionStateChanged(false, "Offline / Local Engine Active"))
+                    }
+                    nextDelayMs = 15000L
                 }
 
-                delay(pollIntervalMs)
+                delay(nextDelayMs)
             }
         }
     }

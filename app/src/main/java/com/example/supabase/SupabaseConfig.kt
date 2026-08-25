@@ -17,6 +17,7 @@ object SupabaseConfig {
     // Table names in PostgreSQL
     const val TABLE_MENU_ITEMS = "menu_items"
     const val TABLE_RESTAURANT_TABLES = "restaurant_tables"
+    const val TABLE_RESTAURANTS = "restaurants"
     const val TABLE_ORDERS = "orders"
     const val TABLE_USERS = "restaurant_owners"
     const val TABLE_CASH_ALERTS = "cash_payment_alerts"

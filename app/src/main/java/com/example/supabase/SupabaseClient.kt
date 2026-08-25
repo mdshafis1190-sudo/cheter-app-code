@@ -18,11 +18,16 @@ class SupabaseClient(private val context: Context?) {
     private val tag = "SupabaseClient"
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
+    @Volatile
+    var isHostReachable: Boolean = true
+        private set
+
     private val okHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(8, TimeUnit.SECONDS)
+            .writeTimeout(8, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(false)
             .build()
     }
 
@@ -51,10 +56,33 @@ class SupabaseClient(private val context: Context?) {
             .addHeader("Prefer", "return=representation")
     }
 
+    private inline fun <T> executeSafely(operation: () -> Result<T>): Result<T> {
+        return try {
+            val result = operation()
+            isHostReachable = true
+            result
+        } catch (e: java.net.UnknownHostException) {
+            if (isHostReachable) {
+                Log.i(tag, "Supabase host is currently unreachable (${e.message}). Switching gracefully to local offline engine.")
+                isHostReachable = false
+            }
+            Result.failure(e)
+        } catch (e: java.net.SocketTimeoutException) {
+            Log.w(tag, "Supabase network timeout: ${e.message}")
+            Result.failure(e)
+        } catch (e: java.io.IOException) {
+            Log.w(tag, "Supabase I/O connection warning: ${e.message}")
+            Result.failure(e)
+        } catch (e: Exception) {
+            Log.w(tag, "Supabase request failed: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
     // ================= MENU ITEMS =================
 
     suspend fun fetchMenuItems(hotelId: String = "hotel1"): Result<List<SupabaseMenuItemDto>> = withContext(Dispatchers.IO) {
-        try {
+        executeSafely {
             val cleanHotelId = hotelId.ifBlank { "hotel1" }
             val url = "${getBaseRestUrl()}/${SupabaseConfig.TABLE_MENU_ITEMS}?or=(hotel_id.eq.$cleanHotelId,shop_id.eq.$cleanHotelId)&order=id.asc"
             val request = createRequestBuilder(url).get().build()
@@ -67,17 +95,14 @@ class SupabaseClient(private val context: Context?) {
                 val items = adapter.fromJson(body) ?: emptyList()
                 Result.success(items)
             } else {
-                Log.w(tag, "Supabase fetchMenuItems error: ${response.code} ${response.message}")
+                Log.w(tag, "Supabase fetchMenuItems status: ${response.code}")
                 Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
             }
-        } catch (e: Exception) {
-            Log.e(tag, "Supabase fetchMenuItems exception: ${e.localizedMessage}")
-            Result.failure(e)
         }
     }
 
     suspend fun upsertMenuItem(dto: SupabaseMenuItemDto): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
+        executeSafely {
             val url = "${getBaseRestUrl()}/${SupabaseConfig.TABLE_MENU_ITEMS}?on_conflict=id"
             val adapter = moshi.adapter(SupabaseMenuItemDto::class.java)
             val json = adapter.toJson(dto)
@@ -94,13 +119,11 @@ class SupabaseClient(private val context: Context?) {
             } else {
                 Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
     suspend fun deleteMenuItem(itemId: Int, hotelId: String = "hotel1"): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
+        executeSafely {
             val cleanHotelId = hotelId.ifBlank { "hotel1" }
             val url = "${getBaseRestUrl()}/${SupabaseConfig.TABLE_MENU_ITEMS}?id=eq.$itemId&or=(hotel_id.eq.$cleanHotelId,shop_id.eq.$cleanHotelId)"
             val request = createRequestBuilder(url).delete().build()
@@ -110,15 +133,13 @@ class SupabaseClient(private val context: Context?) {
             } else {
                 Result.failure(Exception("HTTP ${response.code}"))
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
     // ================= RESTAURANT TABLES (T-1 to T-100) =================
 
     suspend fun fetchTables(hotelId: String = "hotel1"): Result<List<SupabaseRestaurantTableDto>> = withContext(Dispatchers.IO) {
-        try {
+        executeSafely {
             val cleanHotelId = hotelId.ifBlank { "hotel1" }
             val url = "${getBaseRestUrl()}/${SupabaseConfig.TABLE_RESTAURANT_TABLES}?or=(hotel_id.eq.$cleanHotelId,shop_id.eq.$cleanHotelId)&order=table_number.asc"
             val request = createRequestBuilder(url).get().build()
@@ -133,13 +154,11 @@ class SupabaseClient(private val context: Context?) {
             } else {
                 Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
     suspend fun upsertTable(dto: SupabaseRestaurantTableDto): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
+        executeSafely {
             val url = "${getBaseRestUrl()}/${SupabaseConfig.TABLE_RESTAURANT_TABLES}?on_conflict=table_number,hotel_id"
             val adapter = moshi.adapter(SupabaseRestaurantTableDto::class.java)
             val json = adapter.toJson(dto)
@@ -156,8 +175,6 @@ class SupabaseClient(private val context: Context?) {
             } else {
                 Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
@@ -170,7 +187,7 @@ class SupabaseClient(private val context: Context?) {
         isCashRequested: Boolean = false,
         hotelId: String = "hotel1"
     ): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
+        executeSafely {
             val cleanHotelId = hotelId.ifBlank { "hotel1" }
             val url = "${getBaseRestUrl()}/${SupabaseConfig.TABLE_RESTAURANT_TABLES}?table_number=eq.$tableNumber&or=(hotel_id.eq.$cleanHotelId,shop_id.eq.$cleanHotelId)"
             val jsonPayload = """
@@ -193,13 +210,11 @@ class SupabaseClient(private val context: Context?) {
             } else {
                 Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
     suspend fun batchSeedTables(totalTables: Int = 100, hotelId: String = "hotel1"): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
+        executeSafely {
             val cleanHotelId = hotelId.ifBlank { "hotel1" }
             val list = (1..totalTables).map { num ->
                 SupabaseRestaurantTableDto(
@@ -228,15 +243,13 @@ class SupabaseClient(private val context: Context?) {
             } else {
                 Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
     // ================= ORDERS =================
 
     suspend fun fetchOrders(hotelId: String = "hotel1"): Result<List<SupabaseOrderDto>> = withContext(Dispatchers.IO) {
-        try {
+        executeSafely {
             val cleanHotelId = hotelId.ifBlank { "hotel1" }
             val url = "${getBaseRestUrl()}/${SupabaseConfig.TABLE_ORDERS}?or=(hotel_id.eq.$cleanHotelId,shop_id.eq.$cleanHotelId)&order=order_time.desc&limit=100"
             val request = createRequestBuilder(url).get().build()
@@ -251,13 +264,11 @@ class SupabaseClient(private val context: Context?) {
             } else {
                 Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
     suspend fun insertOrder(orderDto: SupabaseOrderDto): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
+        executeSafely {
             val url = "${getBaseRestUrl()}/${SupabaseConfig.TABLE_ORDERS}"
             val adapter = moshi.adapter(SupabaseOrderDto::class.java)
             val json = adapter.toJson(orderDto)
@@ -274,13 +285,11 @@ class SupabaseClient(private val context: Context?) {
             } else {
                 Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
     suspend fun updateOrderStatus(orderId: String, status: String): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
+        executeSafely {
             val url = "${getBaseRestUrl()}/${SupabaseConfig.TABLE_ORDERS}?id=eq.$orderId"
             val jsonPayload = """{"status": "$status"}"""
             val body = jsonPayload.toRequestBody(jsonMediaType)
@@ -293,8 +302,6 @@ class SupabaseClient(private val context: Context?) {
             } else {
                 Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
@@ -304,7 +311,7 @@ class SupabaseClient(private val context: Context?) {
         paymentMode: String? = null,
         transactionRef: String? = null
     ): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
+        executeSafely {
             val url = "${getBaseRestUrl()}/${SupabaseConfig.TABLE_ORDERS}?id=eq.$orderId"
             val modeJson = if (paymentMode != null) "\"payment_mode\": \"$paymentMode\"," else ""
             val refJson = if (transactionRef != null) "\"transaction_ref\": \"$transactionRef\"," else ""
@@ -326,15 +333,13 @@ class SupabaseClient(private val context: Context?) {
             } else {
                 Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
     // ================= SUPABASE AUTH / USERS =================
 
     suspend fun fetchUserByPhone(phone: String): Result<SupabaseUserDto?> = withContext(Dispatchers.IO) {
-        try {
+        executeSafely {
             val url = "${getBaseRestUrl()}/${SupabaseConfig.TABLE_USERS}?phone=eq.$phone&limit=1"
             val request = createRequestBuilder(url).get().build()
             val response = okHttpClient.newCall(request).execute()
@@ -348,13 +353,11 @@ class SupabaseClient(private val context: Context?) {
             } else {
                 Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
     suspend fun registerUser(userDto: SupabaseUserDto): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
+        executeSafely {
             val url = "${getBaseRestUrl()}/${SupabaseConfig.TABLE_USERS}?on_conflict=phone"
             val adapter = moshi.adapter(SupabaseUserDto::class.java)
             val json = adapter.toJson(userDto)
@@ -371,13 +374,11 @@ class SupabaseClient(private val context: Context?) {
             } else {
                 Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
     suspend fun updateUserSession(phone: String, sessionToken: String): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
+        executeSafely {
             val url = "${getBaseRestUrl()}/${SupabaseConfig.TABLE_USERS}?phone=eq.$phone"
             val jsonPayload = """
                 {
@@ -394,8 +395,49 @@ class SupabaseClient(private val context: Context?) {
             } else {
                 Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
             }
-        } catch (e: Exception) {
-            Result.failure(e)
+        }
+    }
+
+    // ================= RESTAURANTS (UPI & SETTINGS) =================
+
+    suspend fun fetchRestaurant(restaurantId: String = "hotel1"): Result<SupabaseRestaurantDto?> = withContext(Dispatchers.IO) {
+        executeSafely {
+            val cleanId = restaurantId.ifBlank { "hotel1" }
+            val url = "${getBaseRestUrl()}/${SupabaseConfig.TABLE_RESTAURANTS}?id=eq.$cleanId&limit=1"
+            val request = createRequestBuilder(url).get().build()
+            val response = okHttpClient.newCall(request).execute()
+
+            if (response.isSuccessful) {
+                val body = response.body?.string() ?: "[]"
+                val listType = Types.newParameterizedType(List::class.java, SupabaseRestaurantDto::class.java)
+                val adapter = moshi.adapter<List<SupabaseRestaurantDto>>(listType)
+                val list = adapter.fromJson(body) ?: emptyList()
+                Result.success(list.firstOrNull())
+            } else {
+                Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
+            }
+        }
+    }
+
+    suspend fun upsertRestaurant(dto: SupabaseRestaurantDto): Result<Boolean> = withContext(Dispatchers.IO) {
+        executeSafely {
+            val url = "${getBaseRestUrl()}/${SupabaseConfig.TABLE_RESTAURANTS}?on_conflict=id"
+            val adapter = moshi.adapter(SupabaseRestaurantDto::class.java)
+            val json = adapter.toJson(dto)
+            val body = json.toRequestBody(jsonMediaType)
+
+            val request = createRequestBuilder(url)
+                .addHeader("Prefer", "resolution=merge-duplicates")
+                .post(body)
+                .build()
+
+            val response = okHttpClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                Result.success(true)
+            } else {
+                Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
+            }
         }
     }
 }
+
