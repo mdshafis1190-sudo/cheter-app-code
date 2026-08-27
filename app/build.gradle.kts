@@ -46,7 +46,7 @@ android {
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+    debug { signingConfig = signingConfigs.getByName("debug") }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
@@ -61,6 +61,10 @@ android {
     includeInApk = false
     includeInBundle = true
   }
+}
+
+composeCompiler {
+  enableStrongSkippingMode = true
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
